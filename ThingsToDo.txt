@@ -1,0 +1,7 @@
+-I still don't get partial least squares
+
+-Rename functions to be more simple
+
+-Multiple output code
+
+-Least Angle Regression with FS0 modification
