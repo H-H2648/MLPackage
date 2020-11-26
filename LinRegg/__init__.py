@@ -1,7 +1,8 @@
 import numpy as np
 import math
-from numpy import linalg
-from scipy.stats import norm, t, f
+from scipy import linalg
+from scipy.stats import norm, t, f, pearsonr
+from scipy.sparse.linalg import lsqr
 
 
 class LinRegg:
@@ -25,6 +26,15 @@ class LinRegg:
         print(self.outputArray)
         self.p = len(self.inputArray[0]) - 1
         self.N = len(self.inputArray)
+
+#removes the bias term 1 first before standardizing
+
+    def standardizePredictor(self):
+        X = np.transpose(np.transpose(self.inputArray)[1:])
+        meanInput = np.mean(X ,axis=0)
+        stdInput = np.std(X, axis=0)
+        standardizedInput = (X - meanInput) / stdInput
+        self.standardizedInputArray= np.insert(standardizedInput, 0, 1, axis=1)
 
     def RSSSolve(self):
         xTy = np.dot(np.transpose(self.inputArray), self.outputArray)
@@ -145,21 +155,184 @@ class LinRegg:
             beta0 = np.mean(self.outputArray, axis=1)
         else:
             beta0 = np.mean(self.outputArray)
-        xTy = np.dot(np.transpose(self.inputArray), self.outputArray)
-        matrix = np.dot(np.transpose(self.inputArray), self.inputArray) + complexity*np.identity(self.p)
+        X = np.transpose(np.transpose(self.inputArray)[1:])
+        xTy = np.dot(np.transpose(X), self.outputArray)
+        matrix = np.dot(np.transpose(X), X) + complexity*np.identity(self.p)
         realMatrix = linalg.inv(matrix)
         Beta = np.dot(realMatrix, xTy)
-        self.RideBestFit = np.insert(Beta, 0, beta0, axis = 0)
-        return self.RidgeBestFit
+        self.ridgeBestFit = np.insert(Beta, 0, beta0, axis = 0)
+        return self.ridgeBestFit
+
+    #assumes single output learning for now
+    #epsilon is so far just random
+    def LARAlgorithm(self, alpha=0.1):
+        #helper function
+        #assumes elem is not in the lst
+        def findIndexInSortedLst(elem, lst):
+            val = 0
+            while lst != []:
+                if elem < lst[0]:
+                    return val
+                elif elem > lst[-1]:
+                    return val + len(lst)-1
+                else:
+                    half = int(len(lst))/2
+                    if elem < lst[half]:
+                        lst = lst[:half]
+                    elif elem > lst[half]:
+                        lst = lst[half+1:]
+                        val += half
+        if not (hasattr(self, 'standardizedInputArray')):
+            self.standardizePredictor()
+        X = self.standardizedInputArray
+        activeXT = np.array([[1]*self.N])
+        y = self.outputArray
+        beta0 = np.mean(y)
+        bestFit = np.zeros(1)
+        bestFit[0] = beta0
+        mostCorrelatedIndices = [0]
+        for ii in range(min(self.p, self.N-1)):
+            residual = y -np.dot(np.transpose(activeXT), bestFit)
+            while True:
+                curMaxCor = -1
+                maxCorrelatedIndex = None
+                XTranspose = X.transpose()
+                for jj in range(1, len(XTranspose)):
+                    correlation = abs(pearsonr(XTranspose[jj], residual)[0])
+                    if correlation > curMaxCor:
+                        maxCorrelatedIndex = jj
+                        curMaxCor = correlation
+                if not maxCorrelatedIndex in mostCorrelatedIndices:
+                    place = findIndexInSortedLst(maxCorrelatedIndex, mostCorrelatedIndices)
+                    activeXTLst = activeXT.tolist()
+                    activeXTLst.insert(place+1, X[:, maxCorrelatedIndex].tolist())
+                    activeXT = np.array(activeXTLst)
+                    bestFit = np.insert(bestFit, place, 0)
+                    mostCorrelatedIndices.insert(place, maxCorrelatedIndex)
+                    break
+                else:
+                    delta = np.dot((np.dot(linalg.inv(np.dot(activeXT, np.transpose(activeXT))), activeXT)), residual)
+                    bestFit += alpha*delta
 
 
+                residual = y - np.dot(np.transpose(activeXT), bestFit)
+        self.LARBestFit = bestFit
+        return self.LARBestFit
 
 
+    #same as above but adds the condition that when non-zero coefficient hits zero, drop its variable from the active set of variable
+    def LARLassoAlgorithm(self, alpha=0.1):
+        #helper function
+        #assumes elem is not in the lst
+        def findIndexInSortedLst(elem, lst):
+            val = 0
+            while lst != []:
+                if elem < lst[0]:
+                    return val
+                elif elem > lst[-1]:
+                    return val + len(lst)-1
+                else:
+                    half = int(len(lst))/2
+                    if elem < lst[half]:
+                        lst = lst[:half]
+                    elif elem > lst[half]:
+                        lst = lst[half+1:]
+                        val += half
+        if not (hasattr(self, 'standardizedInputArray')):
+            self.standardizePredictor()
+        X = self.standardizedInputArray
+        activeXT = np.array([[1]*self.N])
+        y = self.outputArray
+        beta0 = np.mean(y)
+        bestFit = np.zeros(1)
+        bestFit[0] = beta0
+        mostCorrelatedIndices = [0]
+        for ii in range(min(self.p, self.N-1)):
+            residual = y -np.dot(np.transpose(activeXT), bestFit)
+            while True:
+                curMaxCor = -1
+                maxCorrelatedIndex = None
+                XTranspose = X.transpose()
+                for jj in range(1, len(XTranspose)):
+                    correlation = abs(pearsonr(XTranspose[jj], residual)[0])
+                    if correlation > curMaxCor:
+                        maxCorrelatedIndex = jj
+                        curMaxCor = correlation
+                if not maxCorrelatedIndex in mostCorrelatedIndices:
+                    place = findIndexInSortedLst(maxCorrelatedIndex, mostCorrelatedIndices)
+                    activeXTLst = activeXT.tolist()
+                    activeXTLst.insert(place+1, X[:, maxCorrelatedIndex].tolist())
+                    activeXT = np.array(activeXTLst)
+                    bestFit = np.insert(bestFit, place, 0)
+                    mostCorrelatedIndices.insert(place, maxCorrelatedIndex)
+                    break
+                else:
+                    delta = np.dot((np.dot(linalg.inv(np.dot(activeXT, np.transpose(activeXT))), activeXT)), residual)
+                    bestFit += alpha*delta
+                    jj = 0
+                    while jj < len(bestFit):
+                        if bestFit[jj] == 0:
+                            print(bestFit)
+                            bestFit = np.delete(bestFit, jj)
+                            print(bestFit)
+                            activeXT = np.delete(activeXT, jj, 0)
+                            print('removed: {0}'.format(mostCorrelatedIndices[jj]))
+                        jj += 1
 
+                residual = y - np.dot(np.transpose(activeXT), bestFit)
+        self.lassoBestFit = bestFit
+        return self.lassoBestFit
 
+    #things to do:
+    #what is the svd algorithm? Can it be more efficient?
+    #gives solution to standardized input
+    def principalComponentRegression(self):
+        if not(hasattr(self, 'standardizedInputArray')):
+            self.standardizePredictor()
+        X = self.standardizedInputArray
+        y = self.outputArray
+        #only interested in a columns of eigenvectors, vh
+        u, s, vh = linalg.svd(X)
+        bestFit = np.zeros(self.p+1)
+        for v in vh:
+            z = np.dot(X, v)
+            theta = np.dot(z, y)/np.dot(z, z)
+            bestFit +=  theta*v
+        self.principalComponentBestFit = bestFit
+        return (self.principalComponentBestFit)
 
+    def partialLeastSquares(self, M= None):
+        if M == None:
+            M = self.p
+        if not(hasattr(self, 'standardizedInputArray')):
+            self.standardizePredictor()
+        X = self.standardizedInputArray
+        #tranposed X without the 1s
+        superX = np.zeros((self.p, self.N))
+        y = self.outputArray
+        Y = np.zeros((M + 1, self.N))
+        Y[0] = np.ones(self.N)*np.mean(self.outputArray)
+        for ii in range(self.p):
+            superX[ii] = X[:,ii+1]
+        phisArray = np.zeros(self.p)
+        for ii in range(M):
+            for jj in range(self.p):
+                phisArray[jj] = np.dot(superX[jj], self.outputArray)
+            z = np.zeros(self.N)
+            for jj in range(self.p):
+                z += phisArray[jj]*superX[jj]
+            theta = np.dot(z, self.outputArray)/np.dot(z, z)
+            Y[ii+1] = y[ii] + theta*z
+            for jj in range(self.p):
+                superX[jj] -= np.dot(z, superX[jj])/np.dot(z, z)*z
 
+        self.partialLeastSquaresBestFit = lsqr(X, Y[M])
+        return(self.partialLeastSquaresBestFit)
 
+    #OVERALL SUMMARY:
+    #Ridge is generally the most preferable for minimizing prediction errors
+    #PLS, PCR and Ridge are fairly similar
+    #Lasso is somewhere between Ridge and best subsets (enjoys favourable properties of both)
 
 
 
