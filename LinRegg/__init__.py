@@ -23,7 +23,6 @@ class LinRegg:
         else:
             self.inputArray = inputArray
         self.outputArray = outputArray
-        print(self.outputArray)
         self.p = len(self.inputArray[0]) - 1
         self.N = len(self.inputArray)
 
@@ -121,7 +120,10 @@ class LinRegg:
         else:
             return False
 
-    def orthogonalizationAlgorithm(self):
+    #An approximation to best fit that uses orthogonalization approximation
+    #If decompostion set to true, it will find the QR decompsotion
+
+    def orthogonalizationAlgorithm(self, decomposition = False):
         x = np.transpose(self.inputArray)
         bestFit = np.zeros(self.p+1)
         z = np.ones(self.N)
@@ -129,14 +131,34 @@ class LinRegg:
         x = np.transpose(self.inputArray)
         zArray[0] = z
         bestFit[0] = np.dot(zArray[0], self.outputArray)/np.dot(zArray[0], zArray[0])
-        for ii in range(1, self.p + 1):
-            z = x[ii]
-            for jj in range(0, ii):
-                z -= (np.dot(zArray[jj], x[ii])/np.dot(zArray[jj], zArray[jj])) * z[jj]
-            zArray[ii] = z
-            bestFit[ii] = (np.dot(zArray[ii], self.outputArray)/np.dot(zArray[jj], zArray[jj]))
+        for jj in range(1, self.p + 1):
+            z = np.copy(x[jj])
+            for ii in range(0, jj):
+                z -= (np.dot(zArray[ii], x[jj])/np.dot(zArray[ii], zArray[ii])) * zArray[ii]
+            zArray[jj] = z
+            bestFit[ii] = (np.dot(zArray[ii], self.outputArray)/np.dot(zArray[ii], zArray[ii]))
         self.orthogonalBestFit = bestFit
         self.orthogonalResiduals = zArray
+        if decomposition:
+            magnitudes = np.zeros(self.p + 1)
+            for ii in range(self.p + 1):
+                magnitudes[ii] = linalg.norm(zArray[ii])
+            D = np.diag(magnitudes)
+            DInv = linalg.inv(D)
+            Gamma = np.zeros(shape=(self.p+1, self.p+1))
+            #Note Element of Statistical Learning doesn't explain this explicitly: gamma_{i, i} = 1
+            Z = np.transpose(zArray)
+            for jj in range(1, self.p + 1):
+                for ii in range(0, jj):
+                    Gamma[ii][jj] = np.dot(zArray[ii], x[jj])/np.dot(zArray[ii], zArray[ii])
+            for ii in range(0, self.p + 1):
+                Gamma[ii][ii] = 1
+            Q = np.dot(Z, DInv)
+            R = np.dot(D, Gamma)
+            self.QRDecomposition = (Q, R)
+            print(self.orthogonalBestFit)
+            matrix = np.dot(linalg.inv(R), np.transpose(Q))
+            print(np.dot(matrix, self.outputArray))
         return bestFit
 
     def orthogonalVarianceEstimate(self, variance=None):
@@ -144,7 +166,7 @@ class LinRegg:
             self.orthogonalizationAlgorithm()
         if not(hasattr(self, 'variance')):
             self.approximateVariance()
-        self.orthogonalVarianceEstimate = self.variance/(np.dot(self.orthogonalResidiauls[-1], self.orthogonalResidiauls[-1]))
+        self.orthogonalVarianceEstimate = self.variance/(np.dot(self.orthogonalResiduals[-1], self.orthogonalResiduals[-1]))
         return self.orthogonalVarianceEstimate
 
     #for now only accounts for one-dimensional output
@@ -301,6 +323,7 @@ class LinRegg:
         self.principalComponentBestFit = bestFit
         return (self.principalComponentBestFit)
 
+    #DOESNT WORK (confused about what the book is saying(?))
     def partialLeastSquares(self, M= None):
         if M == None:
             M = self.p
@@ -328,6 +351,28 @@ class LinRegg:
 
         self.partialLeastSquaresBestFit = lsqr(X, Y[M])
         return(self.partialLeastSquaresBestFit)
+
+    def incrementalForwardStagewise(self, eps = 0.01):
+        residual = self.outputArray
+        bestFit = np.zeros(self.p)
+        X = self.standardizePredictor()
+        while True:
+            mostCorrelatedIndex = 0
+            maxCorrelation = abs(pearsonr(residual, X[:, 0])[0])
+            for ii in range(self.p):
+                correlation = abs(pearsonr(residual, X[:,ii])[0])
+                if correlation > maxCorrelation:
+                    maxCorrelatedIndex = ii
+                    maxCorrelation = correlation
+            if maxCorrelation == 0:
+                break
+            else:
+                delta = eps* np.sign(np.dot(X[:, mostCorrelatedIndex], residual))
+                bestFit[maxCorrelatedIndex] += delta
+                residual -= delta * X[:, mostCorrelatedIndex]
+        self.incrementalForwardStagewiseBestFit = bestFit
+        return self.incrementalForwardStagewiseBestFit
+
 
     #OVERALL SUMMARY:
     #Ridge is generally the most preferable for minimizing prediction errors
