@@ -31,9 +31,16 @@ class LinRegg:
     def standardizePredictor(self):
         X = np.transpose(np.transpose(self.inputArray)[1:])
         meanInput = np.mean(X ,axis=0)
+        self.XMean = meanInput
         stdInput = np.std(X, axis=0)
+        self.XStd = stdInput
         standardizedInput = (X - meanInput) / stdInput
-        self.standardizedInputArray= np.insert(standardizedInput, 0, 1, axis=1)
+        self.inputArray= np.insert(standardizedInput, 0, 1, axis=1)
+    
+    def standardizeTest(self, testX):
+        standardizedTestX = (testX - self.XMean)/self.XStd
+        return np.insert(standardizedTestX, 0, 1, axis=1)
+
 
     def RSSSolve(self):
         xTy = np.dot(np.transpose(self.inputArray), self.outputArray)
@@ -79,7 +86,7 @@ class LinRegg:
 
     # Assumes N (the sample size) is very large
     # checkMatters calculates whether Bi = 0 (and thus the variable doesn't matter) or not
-    # Note False does not mean that it doesn't matter. It is simply indeterminant
+    # Note True does not mean that it matters. It is simply indeterminant
     def zScore(self, index, variance=None):
         if not (hasattr(self, 'bestFit')):
             self.RSSSolve()
@@ -92,16 +99,36 @@ class LinRegg:
         return (zScore)
 
     def checkMatters(self, index, variance=None, pValue=0.05, tTest=False):
-        zScore = self.zScore(self, index, variance)
+        zScore = self.zScore(index, variance)
         if tTest:
             rv = t(df=len(self.N - self.p - 1))
         else:
             rv = norm()
         p = rv.sf(zScore)
         if p > 1 - (pValue) / 2 or p < (pValue) / 2:
-            return True
-        else:
             return False
+        else:
+            return True
+
+    def bestSubset(self, variance=None, pValue = 0.05, tTest = False):
+        subsetLst = []
+        for index in range(len(self.inputArray[0])):
+            if not(self.checkMatters( index, variance, pValue, tTest)):
+                subsetLst.append(index)
+        self.bestSubsetList = subsetLst
+    
+    def bestSubsetSolve(self):
+        if not(hasattr(self, 'bestSubsetList')):
+            self.bestSubset(variance = None, pValue = 0.05, tTest = False)
+        X = self.inputArray[:, self.bestSubsetList]
+        xTy = np.dot(np.transpose(X), self.outputArray)
+        matrix = np.dot(np.transpose(X), X)
+        realMatrix = linalg.inv(matrix)
+        self.bestSubsetBestFit = np.dot(realMatrix, xTy)
+        
+        
+            
+            
 
     # assumes 0 is not in excludeLst
     def FTest(self, excludeLst, pValue=0.05):
@@ -204,9 +231,7 @@ class LinRegg:
                     elif elem > lst[half]:
                         lst = lst[half+1:]
                         val += half
-        if not (hasattr(self, 'standardizedInputArray')):
-            self.standardizePredictor()
-        X = self.standardizedInputArray
+        X = self.inputArrray
         activeXT = np.array([[1]*self.N])
         y = self.outputArray
         beta0 = np.mean(y)
@@ -260,9 +285,7 @@ class LinRegg:
                     elif elem > lst[half]:
                         lst = lst[half+1:]
                         val += half
-        if not (hasattr(self, 'standardizedInputArray')):
-            self.standardizePredictor()
-        X = self.standardizedInputArray
+        X = self.inputArray
         activeXT = np.array([[1]*self.N])
         y = self.outputArray
         beta0 = np.mean(y)
@@ -306,12 +329,9 @@ class LinRegg:
         return self.lassoBestFit
 
     #things to do:
-    #what is the svd algorithm? Can it be more efficient?
     #gives solution to standardized input
     def principalComponentRegression(self):
-        if not(hasattr(self, 'standardizedInputArray')):
-            self.standardizePredictor()
-        X = self.standardizedInputArray
+        X = self.inputArray
         y = self.outputArray
         #only interested in a columns of eigenvectors, vh
         u, s, vh = linalg.svd(X)
@@ -323,39 +343,50 @@ class LinRegg:
         self.principalComponentBestFit = bestFit
         return (self.principalComponentBestFit)
 
-    #DOESNT WORK (confused about what the book is saying(?))
+    #Follows the book but the coefficients of the best fit is obtained with the algorithm described in wikipedia
+    #
     def partialLeastSquares(self, M= None):
-        if M == None:
+        if M == None or M > self.p:
             M = self.p
-        if not(hasattr(self, 'standardizedInputArray')):
-            self.standardizePredictor()
-        X = self.standardizedInputArray
-        #tranposed X without the 1s
-        superX = np.zeros((self.p, self.N))
-        y = self.outputArray
-        Y = np.zeros((M + 1, self.N))
-        Y[0] = np.ones(self.N)*np.mean(self.outputArray)
-        for ii in range(self.p):
-            superX[ii] = X[:,ii+1]
-        phisArray = np.zeros(self.p)
-        for ii in range(M):
-            for jj in range(self.p):
-                phisArray[jj] = np.dot(superX[jj], self.outputArray)
+        X = np.copy(self.inputArray)[:,1:]
+        y = np.copy(self.outputArray)
+        yPred = np.mean(self.outputArray)*np.ones(self.N)
+        #Solves XB = yPred
+        #For now, forgets the b term.
+        xTy = np.dot(np.transpose(X), yPred)
+        matrix = np.dot(np.transpose(X), X)
+        realMatrix = linalg.inv(matrix)
+        B = np.dot(realMatrix, xTy)
+        #b0 = np.mean(y)
+        Phi = np.zeros(shape=(self.p, M))
+        Z = np.zeros(shape=(self.N, M))
+        P = np.zeros(shape = (self.p, M))
+        Theta = np.zeros(M)
+        for ii in range(0, M):
             z = np.zeros(self.N)
+            for jj in range( self.p):
+                phi = np.dot(X[:, jj], y)
+                Phi[jj][ii] = phi
+                z += phi*X[:, jj]
+            theta = np.dot(z, y)/np.dot(z, z)
+            Theta[ii] = theta
+            Z[:,ii] = z
+            p = np.dot(np.transpose(X), z)
+            P[:,ii] = p
+            yPred += theta*z
             for jj in range(self.p):
-                z += phisArray[jj]*superX[jj]
-            theta = np.dot(z, self.outputArray)/np.dot(z, z)
-            Y[ii+1] = y[ii] + theta*z
-            for jj in range(self.p):
-                superX[jj] -= np.dot(z, superX[jj])/np.dot(z, z)*z
+                X[:,jj] -= (np.dot(z, X[:,jj])/np.dot(z, z))*z
+        b0 = Theta[0] - np.dot(np.transpose(P[:,0]), B)
+        bestFit = np.insert(B, 0, b0)
+        self.partialLeastSquaresBestFit= bestFit
 
-        self.partialLeastSquaresBestFit = lsqr(X, Y[M])
-        return(self.partialLeastSquaresBestFit)
+
+        
 
     def incrementalForwardStagewise(self, eps = 0.01):
         residual = self.outputArray
         bestFit = np.zeros(self.p)
-        X = self.standardizePredictor()
+        X = self.inputArray
         while True:
             mostCorrelatedIndex = 0
             maxCorrelation = abs(pearsonr(residual, X[:, 0])[0])
