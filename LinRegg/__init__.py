@@ -8,18 +8,14 @@ from scipy.sparse.linalg import lsqr
 class LinRegg:
     # assumes input is of the form [[x11, x12, x13, ..., x1p], [x21, x22, ..., x2p], [xN1, xN2, ..., xNp]] (numpy array)
     # assumes output is of the form [y1, y2, y2, ... , yN] (numpy array)
-    # propered implies that someone has already turned the input to be of the form [[1, x11, x12, x13, ..., x1p], [1, x21, x22, ..., x2p], [1, xN1, xN2, ..., xNp]]
+    # normalized implies that someone has already turned the input to be of the form [[1, x11, x12, x13, ..., x1p], [1, x21, x22, ..., x2p], [1, xN1, xN2, ..., xNp]]
 
     # THINGS TO DO LATER:
     # inputArray and outputArray should have the same size
     # check if inputArray is linearly independent [remove 'duplicate']
-    def __init__(self, inputArray, outputArray, propered=False):
-        if not (propered):
-            inputLst = inputArray.tolist()
-            properLst = []
-            for row in inputLst:
-                properLst.append([1] + row)
-            self.inputArray = np.array(properLst)
+    def __init__(self, inputArray, outputArray, normalized=False):
+        if not (normalized):
+            self.inputArray = np.insert(inputArray, 0, np.ones(len(inputArray)), axis = 1)
         else:
             self.inputArray = inputArray
         self.outputArray = outputArray
@@ -36,7 +32,7 @@ class LinRegg:
         self.XStd = stdInput
         standardizedInput = (X - meanInput) / stdInput
         self.inputArray= np.insert(standardizedInput, 0, 1, axis=1)
-    
+
     def standardizeTest(self, testX):
         standardizedTestX = (testX - self.XMean)/self.XStd
         return np.insert(standardizedTestX, 0, 1, axis=1)
@@ -49,11 +45,13 @@ class LinRegg:
         self.bestFit = np.dot(realMatrix, xTy)
         return self.bestFit
 
-    def residual(self):
+    def calculateResidual(self):
+        print('here')
         if not (hasattr(self, 'bestFit')):
             self.RSSSolve()
         testOutput = np.dot(self.inputArray, self.bestFit)
-        return (self.outputArray - testOutput)
+        print(testOutput)
+        self.residual = self.outputArray - testOutput
 
     # assumes input is simply [x1, x2, ..., xp]
     # propered implies that someone sends the input [1, x1, x2, ..., xp]
@@ -81,7 +79,8 @@ class LinRegg:
         self.variance = variance
 
     def approximateVariance(self):
-        self.variance = 1 / (self.N - self.p - 1) * (np.dot(self.residual(), self.residual()))
+        self.calculateResidual()
+        self.variance = 1 / (self.N - self.p - 1) * np.trace((np.dot(np.transpose(self.residual), self.residual)))
         return self.variance
 
     # Assumes N (the sample size) is very large
@@ -96,6 +95,17 @@ class LinRegg:
             variance = self.variance
         normalizedStandardDeviationMatrix = linalg.inv(np.dot(np.transpose(self.inputArray), self.inputArray))
         zScore = self.bestFit[index] / (math.sqrt(variance * normalizedStandardDeviationMatrix[index][index]))
+        return (zScore)
+
+    def ridgeZScore(self, index, variance=None):
+        if not (hasattr(self, 'ridgeBestFit')):
+            self.RSSSolve()
+        if variance == None:
+            if not (hasattr(self, 'variance')):
+                self.approximateVariance()
+            variance = self.variance
+        normalizedStandardDeviationMatrix = linalg.inv(np.dot(np.transpose(self.inputArray), self.inputArray))
+        zScore = self.ridgeBestFit[index] / (math.sqrt(variance * normalizedStandardDeviationMatrix[index][index]))
         return (zScore)
 
     def checkMatters(self, index, variance=None, pValue=0.05, tTest=False):
@@ -133,7 +143,7 @@ class LinRegg:
     # assumes 0 is not in excludeLst
     def FTest(self, excludeLst, pValue=0.05):
         subsetInputArray = np.delete(self.inputArray, excludeLst, axis=1)
-        subsetLinTest = LinRegg(subsetInputArray, self.outputArray, propered=True)
+        subsetLinTest = LinRegg(subsetInputArray, self.outputArray, normalized=True)
         subsetLinTest.RSS()
         if not (hasattr(self, 'RSSVal')):
             self.RSS()
@@ -196,12 +206,12 @@ class LinRegg:
         self.orthogonalVarianceEstimate = self.variance/(np.dot(self.orthogonalResiduals[-1], self.orthogonalResiduals[-1]))
         return self.orthogonalVarianceEstimate
 
-    #for now only accounts for one-dimensional output
+    #for now multi-dimensional ouput assumes one single complexity parameter
     #complexity is the complexity parameter (lambda)
     #highlights the variables with higher variance
     def RSSRidgeSolve(self, complexity):
         if self.outputArray.ndim > 1:
-            beta0 = np.mean(self.outputArray, axis=1)
+            beta0 = np.mean(self.outputArray, axis=0)
         else:
             beta0 = np.mean(self.outputArray)
         X = np.transpose(np.transpose(self.inputArray)[1:])
@@ -231,7 +241,7 @@ class LinRegg:
                     elif elem > lst[half]:
                         lst = lst[half+1:]
                         val += half
-        X = self.inputArrray
+        X = self.inputArray
         activeXT = np.array([[1]*self.N])
         y = self.outputArray
         beta0 = np.mean(y)
