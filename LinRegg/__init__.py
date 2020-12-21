@@ -21,7 +21,10 @@ class LinRegg:
         self.outputArray = outputArray
         self.p = len(self.inputArray[0]) - 1
         self.N = len(self.inputArray)
-
+        if outputArray.ndim > 1:
+            self.K = len(self.outputArray[0])
+        else:
+            self.K = 1
 #removes the bias term 1 first before standardizing
 
     def standardizePredictor(self):
@@ -95,17 +98,6 @@ class LinRegg:
             variance = self.variance
         normalizedStandardDeviationMatrix = linalg.inv(np.dot(np.transpose(self.inputArray), self.inputArray))
         zScore = self.bestFit[index] / (math.sqrt(variance * normalizedStandardDeviationMatrix[index][index]))
-        return (zScore)
-
-    def ridgeZScore(self, index, variance=None):
-        if not (hasattr(self, 'ridgeBestFit')):
-            self.RSSSolve()
-        if variance == None:
-            if not (hasattr(self, 'variance')):
-                self.approximateVariance()
-            variance = self.variance
-        normalizedStandardDeviationMatrix = linalg.inv(np.dot(np.transpose(self.inputArray), self.inputArray))
-        zScore = self.ridgeBestFit[index] / (math.sqrt(variance * normalizedStandardDeviationMatrix[index][index]))
         return (zScore)
 
     def checkMatters(self, index, variance=None, pValue=0.05, tTest=False):
@@ -224,7 +216,8 @@ class LinRegg:
 
     #assumes single output learning for now
     #epsilon is so far just random
-    def LARAlgorithm(self, alpha=0.1):
+    #time to change it to multiple output format
+    def singleLARAlgorithm(self, y, alpha):
         #helper function
         #assumes elem is not in the lst
         def findIndexInSortedLst(elem, lst):
@@ -243,7 +236,6 @@ class LinRegg:
                         val += half
         X = self.inputArray
         activeXT = np.array([[1]*self.N])
-        y = self.outputArray
         beta0 = np.mean(y)
         bestFit = np.zeros(1)
         bestFit[0] = beta0
@@ -264,7 +256,7 @@ class LinRegg:
                     activeXTLst = activeXT.tolist()
                     activeXTLst.insert(place+1, X[:, maxCorrelatedIndex].tolist())
                     activeXT = np.array(activeXTLst)
-                    bestFit = np.insert(bestFit, place, 0)
+                    bestFit = np.insert(bestFit, place, 0, axis=1)
                     mostCorrelatedIndices.insert(place, maxCorrelatedIndex)
                     break
                 else:
@@ -275,10 +267,20 @@ class LinRegg:
                 residual = y - np.dot(np.transpose(activeXT), bestFit)
         self.LARBestFit = bestFit
         return self.LARBestFit
+    
+    def LARAlgorithm(self, alpha=0.1):
+        if self.K == 1:
+            self.LARBestFit = self.singleLARAlgorithm(y=self.outputArray, alpha=alpha)
+        else:
+            bestFit = np.zeros(shape=(self.p+1, self.K))
+            for ii in range(self.K):
+                bestFit[:,ii] = self.singleLARAlgorithm(y=self.outputArray[:,ii], alpha=alpha)
+            self.LARBestFit = bestFit
 
 
     #same as above but adds the condition that when non-zero coefficient hits zero, drop its variable from the active set of variable
-    def LARLassoAlgorithm(self, alpha=0.1):
+
+    def singleLARLassoAlgorithm(self, y, alpha=0.1):
         #helper function
         #assumes elem is not in the lst
         def findIndexInSortedLst(elem, lst):
@@ -297,7 +299,6 @@ class LinRegg:
                         val += half
         X = self.inputArray
         activeXT = np.array([[1]*self.N])
-        y = self.outputArray
         beta0 = np.mean(y)
         bestFit = np.zeros(1)
         bestFit[0] = beta0
@@ -335,14 +336,21 @@ class LinRegg:
                         jj += 1
 
                 residual = y - np.dot(np.transpose(activeXT), bestFit)
-        self.lassoBestFit = bestFit
-        return self.lassoBestFit
+        return bestFit
 
-    #things to do:
-    #gives solution to standardized input
-    def principalComponentRegression(self):
+    def LARLassoAlgorithm(self, alpha=0.1):
+        if self.K == 1:
+            self.lassoBestFit = self.singleLARLassoAlgorithm(y=self.outputArray, alpha=alpha)
+        else:
+            bestFit = np.zeros(shape=(self.p+1, self.K))
+            for ii in range(self.K):
+                bestFit[:,ii] = self.singleLARLassoAlgorithm(y=self.outputArray[:,ii], alpha=alpha)
+            self.lassoBestFit = bestFit
+
+
+
+    def singlePrincipalComponentRegression(self, y):
         X = self.inputArray
-        y = self.outputArray
         #only interested in a columns of eigenvectors, vh
         u, s, vh = linalg.svd(X)
         bestFit = np.zeros(self.p+1)
@@ -350,17 +358,25 @@ class LinRegg:
             z = np.dot(X, v)
             theta = np.dot(z, y)/np.dot(z, z)
             bestFit +=  theta*v
-        self.principalComponentBestFit = bestFit
-        return (self.principalComponentBestFit)
+        return bestFit
+
+    def principalComponentRegression(self):
+        if self.K == 1:
+            self.PCRBestFit = self.singlePrincipalComponentRegression(y = self.outputArray)
+        else:
+            bestFit = np.zeros(shape = (self.p+1, self.K))
+            for ii in range(self.K):
+                bestFit[:,ii] = self.singlePrincipalComponentRegression(y = self.outputArray[:,ii])
+            self.PCRBestFit = bestFit
+
 
     #Follows the book but the coefficients of the best fit is obtained with the algorithm described in wikipedia
     #
-    def partialLeastSquares(self, M= None):
+    def singlePartialLeastSquares(self, y, M):
         if M == None or M > self.p:
             M = self.p
         X = np.copy(self.inputArray)[:,1:]
-        y = np.copy(self.outputArray)
-        yPred = np.mean(self.outputArray)*np.ones(self.N)
+        yPred = np.mean(y)*np.ones(self.N)
         #Solves XB = yPred
         #For now, forgets the b term.
         xTy = np.dot(np.transpose(X), yPred)
@@ -374,8 +390,11 @@ class LinRegg:
         Theta = np.zeros(M)
         for ii in range(0, M):
             z = np.zeros(self.N)
-            for jj in range( self.p):
+            for jj in range(self.p):
+                print(X[:, jj])
+                print(y)
                 phi = np.dot(X[:, jj], y)
+                print(phi)
                 Phi[jj][ii] = phi
                 z += phi*X[:, jj]
             theta = np.dot(z, y)/np.dot(z, z)
@@ -388,7 +407,17 @@ class LinRegg:
                 X[:,jj] -= (np.dot(z, X[:,jj])/np.dot(z, z))*z
         b0 = Theta[0] - np.dot(np.transpose(P[:,0]), B)
         bestFit = np.insert(B, 0, b0)
-        self.partialLeastSquaresBestFit= bestFit
+        return bestFit
+    
+    def partialLeastSquares(self, M=None):
+        if self.K == 1:
+            self.PLSBestFit = self.singlePartialLeastSquares(y=self.outputArray, M=M)
+        else:
+            bestFit = np.zeros(shape = (self.p+1, self.K))
+            for ii in range(self.K):
+                bestFit[:,ii] = self.singlePartialLeastSquares(y = self.outputArray[:,ii], M=M)
+            self.PLSBestFit = bestFit
+
 
 
         
