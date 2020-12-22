@@ -45,55 +45,122 @@ class LinClass:
         target = np.dot(x, self.bestFitRSS)
         indicator = np.argmax(target)
         return self.indicators[indicator]
-
-    def setDiscriminants(self, probabilities=None, means=None, covariance=None):
-        if probabilities=None
+        
+    def setProbabilities(self, val=None):
+        if val is None:
             probabilities = np.zeros(self.K)
             for ii in range(self.K):
                 probabilities[ii] = np.sum(self.outputArray[:, ii])/self.N
-        if means=None
+            self.probabilities = probabilities
+        else:
+            if len(val) != self.K:
+                raise Exception('your probabilities must match the classifiers: number of classifications {0}, number of probabilities {1}'.format(self.K, len(val))) 
+            self.probabilities = val
+
+    def setMeans(self, val = None):
+        if val == None:
+            if not(hasattr(self, 'probabilities')):
+                self.setProbabilities()
+                probabilities = self.probabilities
             means = np.zeros(self.K)
             for ii in range(self.N):
-                indication = np.where(self.outputArray[ii] == 1)[0] #there should always be exactly one 1
+                indication = np.nonzero(self.outputArray[ii])[0] #there should always be exactly one 1
                 means[indication] += self.inputArray[indication]/(probabilities[indication]*self.N)
-        if covariance=None
-            covariance = 0
+            self.means = means
+        else:
+            self.means = val
+    
+    def setLinearCovariance(self, val=None):
+        if val == None:
+            if not(hasattr(self, 'means')):
+                self.setMeans()
+                means = self.means
+            covariance = np.zeros((self.N, self.N))
             for kk in range(self.K):
-                indications = np.where(self.outputArray[:, kk])
+                indications = np.nonzero(self.outputArray[:, kk])
                 for ii in indications:
-                    covariance += (np.dot(self.inputArray[ii] - means[kk], self.inputArray[ii] - means[kk])/(self.N - self.K)
-        self.probabilities = probabilities
-        self.means = means
-        self.covariance = covariance
+                    covariance += (np.outer(self.inputArray[ii] - means[kk], self.inputArray[ii] - means[kk])/(self.N - self.K))
+            self.linearCovariance = covariance
+        else:
+            self.linearCovariance = val
+    
+    def setQuadraticCovariance(self, val = None):
+        if val == None:
+            if not(hasattr(self, 'means')):
+                self.setMeans()
+                means = self.means
+            covariances = np.zeros((self.K, self.N, self.N))
+            for kk in range(self.K):
+                indications = np.nonzero(self.outputArray[:, kk])
+                indicationsLength = len(indications)
+                for ii in indications:
+                    covariances[kk] += (np.outer(self.inputArray[ii] - means[kk], self.inputArray[ii] - means[kk])/(indicationsLength - 1))
+            self.quadraticCovariance = covariances
+        else:
+            if len(val) != self.K:
+                raise Exception('your covariances must match the classifiers: number of classifications {0}, covariance length {1}'.format(self.K, len(val))) 
+
+
 
     def linearDiscrinantAnalysisSolve(self, x):
-        check = ['probabilities', 'means', 'covariance']
-        needToApproximate = []
-        for var in check:
-            if not(hasattr(self, var)):
-                needToApproximate.append(getattr(self, var))
-            else:
-                needToApproximate.append(None)
-        self.setDiscriminants(check[0], check[1], check[2])
-        deltas = np.zeros(self.K)
+        if not (hasattr(self, 'probabilities')):
+            self.setProbabilities()
+        if not(hasattr(self, 'means')):
+            self.setMeans
+        if not(hasattr(self, 'linearCovariance')):
+            self.setLinearCovariance()
+        #UNOPTIMIZED SOLUTION
+        #deltas = np.zeros(self.K)
+        #for ii in range(self.K):
+        #    deltas[ii] = np.dot(x, np.dot(linalg.inv(self.linearCovariance), self.means[ii])) - 1/2*np.dot(np.transpose(self.means[ii]), linalg.inv(self.linearCovariance)*self.means[ii]) + math.log(self.probabilities[ii])
+        #indicator = np.argmax(deltas)
+        #OPTIMIZED SOLUTION
+        U, d, Ut = np.linalg.svd(self.linearCovariance, hermitian=True)
+        invSqrtD = np.diag(np.sqrt(1/d))
+        X = np.dot(invSqrtD, np.dot(Ut, self.inputArray))
+        means = np.zeros(self.K)
+        for ii in range(self.N):
+            indication = np.nonzero(self.outputArray[ii])[0] #there should always be exactly one 1
+            means[indication] += X[indication]/(self.probabilities[indication]*self.N)
+        distanceFromMean = np.zeros(self.K)
         for ii in range(self.K):
-            deltas[ii] = np.dot(np.transpose(x), 1/covariance*self.means[ii]) - 1/2*np.dot(np.transpose(self.means[ii]), 1/covariance*self.means[ii]) + math.log(probabilities[ii])
-        indicator = np.argmax(target)
+            distanceFromMean[ii] = -1/2 * np.norm(x - self.means[ii])
+        findMin = distanceFromMean + np.log(self.probabilities)
+        indicator = np.argmax(findMin)
         return self.indicators[indicator]
 
-    def quadraticDiscriminatnAnalysisSolve(self, x):
-        check = ['probabilities', 'means', 'covariance']
-        needToApproximate = []
-        for var in check:
-            if not(hasattr(self, var)):
-                needToApproximate.append(getattr(self, var))
-            else:
-                needToApproximate.append(None)
-        self.setDiscriminants(check[0], check[1], check[2])
+
+    def quadraticDiscriminantAnalysisSolve(self, x):
+        if not (hasattr(self, 'probabilities')):
+            self.setProbabilities()
+        if not(hasattr(self, 'means')):
+            self.setMeans
+        if not(hasattr(self, 'quadraticCovariance')):
+            self.setQuadraticCovariance()
         deltas = np.zeros(self.K)
         for ii in range(self.K):
-            -1/2*math.log(math.abs())
+           deltas[ii] = -1/2*math.log(linalg.norm(self.quadraticCovariance[ii])) - 1/2*np.dot(x - self.means[ii], np.dot(linalg.inv(self.quadraticCovariance[ii]), x - self.means[ii])) + math.log(self.probabilities[ii])
+        indicator = np.argmax(deltas)
+        return self.indicators[indicator]
         
+
+#maybe optimize this(?)
+#memoization? or would that cause memory leak when trying to find the best alpha?
+#have memoization variable?
+    def regularlizeDiscriminantAnalysisSolve(self, alpha, x):
+        if not(hasattr(self, 'linearCovariance')):
+            self.setLinearCovariance()
+        if not(hasattr(self, 'quadraticCovariance')):
+            self.setQuadraticCovariance()
+        covariance = alpha*self.quadraticCovariance + (1-alpha)*np.dot(self.linearCovariance, np.ones(self.K))
+        deltas = np.zeros(self.K)
+        for ii in range(self.K):
+           deltas[ii] = -1/2*math.log(linalg.norm(covariance[ii])) - 1/2*np.dot(x - self.means[ii], np.dot(linalg.inv(covariance[ii]), x - self.means[ii])) + math.log(self.probabilities[ii])
+        indicator = np.argmax(deltas[ii])
+        return self.indicators[indicator]
+    
+
+
         
         
 

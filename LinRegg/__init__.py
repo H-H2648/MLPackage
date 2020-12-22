@@ -14,6 +14,8 @@ class LinRegg:
     # inputArray and outputArray should have the same size
     # check if inputArray is linearly independent [remove 'duplicate']
     def __init__(self, inputArray, outputArray, normalized=False):
+        if len(inputArray) != len(outputArray):
+            raise Exception('your input size and the output size must match {0}, {1}'.format(len(inputArray), len(outputArray))) 
         if not (normalized):
             self.inputArray = np.insert(inputArray, 0, np.ones(len(inputArray)), axis = 1)
         else:
@@ -49,28 +51,10 @@ class LinRegg:
         return self.bestFit
 
     def calculateResidual(self):
-        print('here')
         if not (hasattr(self, 'bestFit')):
             self.RSSSolve()
         testOutput = np.dot(self.inputArray, self.bestFit)
-        print(testOutput)
         self.residual = self.outputArray - testOutput
-
-    # assumes input is simply [x1, x2, ..., xp]
-    # propered implies that someone sends the input [1, x1, x2, ..., xp]
-    def predict(self, inputVector, propered=False):
-        bestFitLine = self.RSSSolve()
-        if not (propered):
-            inputLst = inputVector.tolist()
-            properLst = [1] + inputLst
-            properVector = np.array(properLst)
-        else:
-            properVector = inputVector
-        if not (hasattr(self, 'bestFit')):
-            return np.dot(properVector, self.bestFit)
-        else:
-            self.RSSSolve()
-            return np.dot(properVector, self.bestFit)
 
     def RSS(self):
         if not (hasattr(self, 'bestFit')):
@@ -185,9 +169,6 @@ class LinRegg:
             Q = np.dot(Z, DInv)
             R = np.dot(D, Gamma)
             self.QRDecomposition = (Q, R)
-            print(self.orthogonalBestFit)
-            matrix = np.dot(linalg.inv(R), np.transpose(Q))
-            print(np.dot(matrix, self.outputArray))
         return bestFit
 
     def orthogonalVarianceEstimate(self, variance=None):
@@ -195,8 +176,7 @@ class LinRegg:
             self.orthogonalizationAlgorithm()
         if not(hasattr(self, 'variance')):
             self.approximateVariance()
-        self.orthogonalVarianceEstimate = self.variance/(np.dot(self.orthogonalResiduals[-1], self.orthogonalResiduals[-1]))
-        return self.orthogonalVarianceEstimate
+        return self.variance/(np.dot(self.orthogonalResiduals[-1], self.orthogonalResiduals[-1]))
 
     #for now multi-dimensional ouput assumes one single complexity parameter
     #complexity is the complexity parameter (lambda)
@@ -240,7 +220,7 @@ class LinRegg:
         bestFit = np.zeros(1)
         bestFit[0] = beta0
         mostCorrelatedIndices = [0]
-        for ii in range(min(self.p, self.N-1)):
+        for _ in range(min(self.p, self.N-1)):
             residual = y -np.dot(np.transpose(activeXT), bestFit)
             while True:
                 curMaxCor = -1
@@ -303,7 +283,7 @@ class LinRegg:
         bestFit = np.zeros(1)
         bestFit[0] = beta0
         mostCorrelatedIndices = [0]
-        for ii in range(min(self.p, self.N-1)):
+        for _ in range(min(self.p, self.N-1)):
             residual = y -np.dot(np.transpose(activeXT), bestFit)
             while True:
                 curMaxCor = -1
@@ -328,9 +308,7 @@ class LinRegg:
                     jj = 0
                     while jj < len(bestFit):
                         if bestFit[jj] == 0:
-                            print(bestFit)
                             bestFit = np.delete(bestFit, jj)
-                            print(bestFit)
                             activeXT = np.delete(activeXT, jj, 0)
                             print('removed: {0}'.format(mostCorrelatedIndices[jj]))
                         jj += 1
@@ -391,10 +369,7 @@ class LinRegg:
         for ii in range(0, M):
             z = np.zeros(self.N)
             for jj in range(self.p):
-                print(X[:, jj])
-                print(y)
                 phi = np.dot(X[:, jj], y)
-                print(phi)
                 Phi[jj][ii] = phi
                 z += phi*X[:, jj]
             theta = np.dot(z, y)/np.dot(z, z)
