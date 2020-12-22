@@ -12,37 +12,17 @@ class LinClass:
     # propered implies that someone has already turned the input to be of the form [[1, x11, x12, x13, ..., x1p], [1, x21, x22, ..., x2p], [1, xN1, xN2, ..., xNp]]
     # normalized implies that someone has already turned the input to be of the form [[1, x11, x12, x13, ..., x1p], [1, x21, x22, ..., x2p], [1, xN1, xN2, ..., xNp]]
     def __init__(self, inputArray, outputArray, indicatorArray, normalized=False):
-        if not (normalized):
-            self.inputArray = np.insert(inputArray, 0, np.ones(len(inputArray)), axis = 0)
-        else:
-            self.inputArray = inputArray
+        self.inputArray = inputArray
         self.outputArray = outputArray
         self.indicators = indicatorArray
-        self.p = len(self.inputArray[0] - 1)
+        self.p = len(self.inputArray[0])
         self.N = len(self.inputArray)
         self.K = len(self.outputArray[0])
 
-    def standardizePredictor(self):
-        X = np.transpose(np.transpose(self.inputArray)[1:])
-        meanInput = np.mean(X ,axis=0)
-        self.XMean = meanInput
-        stdInput = np.std(X, axis=0)
-        self.XStd = stdInput
-        standardizedInput = (X - meanInput) / stdInput
-        self.inputArray= np.insert(standardizedInput, 0, 1, axis=1)
-    
-    def bestFitRSS(self):
-        xTy = np.dot(np.transpose(self.inputArray), self.outputArray)
-        matrix = np.dot(np.transpose(self.inputArray), self.inputArray)
-        realMatrix = linalg.inv(matrix)
-        self.bestFit = np.dot(realMatrix, xTy)
-        return self.bestFit
 
-
-    def determineClassRegg(self, x):
-        if not(hasattr(self, 'bestfit')):
-            self.bestFitRSS()
-        target = np.dot(x, self.bestFitRSS)
+#assumes bestFit has already been obtained from LinRegg
+    def determineClassRegg(self, x, bestFit):
+        target = np.dot(x, bestFit)
         indicator = np.argmax(target)
         return self.indicators[indicator]
         
@@ -61,10 +41,10 @@ class LinClass:
         if val == None:
             if not(hasattr(self, 'probabilities')):
                 self.setProbabilities()
-                probabilities = self.probabilities
-            means = np.zeros(self.K)
+            probabilities = self.probabilities
+            means = np.zeros((self.K, self.p))
             for ii in range(self.N):
-                indication = np.nonzero(self.outputArray[ii])[0] #there should always be exactly one 1
+                indication = np.nonzero(self.outputArray[ii])[0][0] #there should always be exactly one 1
                 means[indication] += self.inputArray[indication]/(probabilities[indication]*self.N)
             self.means = means
         else:
@@ -74,10 +54,10 @@ class LinClass:
         if val == None:
             if not(hasattr(self, 'means')):
                 self.setMeans()
-                means = self.means
-            covariance = np.zeros((self.N, self.N))
+            means = self.means
+            covariance = np.zeros((self.p, self.p))
             for kk in range(self.K):
-                indications = np.nonzero(self.outputArray[:, kk])
+                indications = np.nonzero(self.outputArray[:, kk])[0]
                 for ii in indications:
                     covariance += (np.outer(self.inputArray[ii] - means[kk], self.inputArray[ii] - means[kk])/(self.N - self.K))
             self.linearCovariance = covariance
@@ -88,10 +68,10 @@ class LinClass:
         if val == None:
             if not(hasattr(self, 'means')):
                 self.setMeans()
-                means = self.means
-            covariances = np.zeros((self.K, self.N, self.N))
+            means = self.means
+            covariances = np.zeros((self.K, self.p, self.p))
             for kk in range(self.K):
-                indications = np.nonzero(self.outputArray[:, kk])
+                indications = np.nonzero(self.outputArray[:, kk])[0]
                 indicationsLength = len(indications)
                 for ii in indications:
                     covariances[kk] += (np.outer(self.inputArray[ii] - means[kk], self.inputArray[ii] - means[kk])/(indicationsLength - 1))
@@ -102,7 +82,7 @@ class LinClass:
 
 
 
-    def linearDiscrinantAnalysisSolve(self, x):
+    def linearDiscriminantAnalysisSolve(self, x):
         if not (hasattr(self, 'probabilities')):
             self.setProbabilities()
         if not(hasattr(self, 'means')):
@@ -116,6 +96,9 @@ class LinClass:
         #indicator = np.argmax(deltas)
         #OPTIMIZED SOLUTION
         U, d, Ut = np.linalg.svd(self.linearCovariance, hermitian=True)
+        print(U)
+        print(d)
+        print(Ut)
         invSqrtD = np.diag(np.sqrt(1/d))
         X = np.dot(invSqrtD, np.dot(Ut, self.inputArray))
         means = np.zeros(self.K)

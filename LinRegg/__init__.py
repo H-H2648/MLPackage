@@ -54,7 +54,7 @@ class LinRegg:
         if not (hasattr(self, 'bestFit')):
             self.RSSSolve()
         testOutput = np.dot(self.inputArray, self.bestFit)
-        self.residual = self.outputArray - testOutput
+        return self.outputArray - testOutput
 
     def RSS(self):
         if not (hasattr(self, 'bestFit')):
@@ -66,8 +66,8 @@ class LinRegg:
         self.variance = variance
 
     def approximateVariance(self):
-        self.calculateResidual()
-        self.variance = 1 / (self.N - self.p - 1) * np.trace((np.dot(np.transpose(self.residual), self.residual)))
+        residual = self.calculateResidual()
+        self.variance = 1 / (self.N - self.p - 1) * np.trace((np.dot(np.transpose(residual), residual)))
         return self.variance
 
     # Assumes N (the sample size) is very large
@@ -330,7 +330,7 @@ class LinRegg:
     def singlePrincipalComponentRegression(self, y):
         X = self.inputArray
         #only interested in a columns of eigenvectors, vh
-        u, s, vh = linalg.svd(X)
+        vh = linalg.svd(X)[2]
         bestFit = np.zeros(self.p+1)
         for v in vh:
             z = np.dot(X, v)
