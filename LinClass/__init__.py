@@ -82,7 +82,7 @@ class LinClass:
 
 
 
-    def linearDiscriminantAnalysisSolve(self, x):
+    def LDASolve(self, x):
         if not (hasattr(self, 'probabilities')):
             self.setProbabilities()
         if not(hasattr(self, 'means')):
@@ -90,30 +90,41 @@ class LinClass:
         if not(hasattr(self, 'linearCovariance')):
             self.setLinearCovariance()
         #UNOPTIMIZED SOLUTION
-        #deltas = np.zeros(self.K)
-        #for ii in range(self.K):
-        #    deltas[ii] = np.dot(x, np.dot(linalg.inv(self.linearCovariance), self.means[ii])) - 1/2*np.dot(np.transpose(self.means[ii]), linalg.inv(self.linearCovariance)*self.means[ii]) + math.log(self.probabilities[ii])
-        #indicator = np.argmax(deltas)
-        #OPTIMIZED SOLUTION
+        deltas = np.zeros(self.K)
+        for ii in range(self.K):
+            deltas[ii] = np.dot(x, np.dot(linalg.inv(self.linearCovariance), self.means[ii])) - 1/2*np.dot(np.transpose(self.means[ii]), np.dot(linalg.inv(self.linearCovariance), self.means[ii])) + math.log(self.probabilities[ii])
+        indicator = np.argmax(deltas)
+        return self.indicators[indicator]
+
+    def sphereInput(self):
+        if not (hasattr(self, 'probabilities')):
+            self.setProbabilities()
+        if not(hasattr(self, 'means')):
+            self.setMeans
+        if not(hasattr(self, 'linearCovariance')):
+            self.setLinearCovariance()
         U, d, Ut = np.linalg.svd(self.linearCovariance, hermitian=True)
-        print(U)
-        print(d)
-        print(Ut)
         invSqrtD = np.diag(np.sqrt(1/d))
-        X = np.dot(invSqrtD, np.dot(Ut, self.inputArray))
-        means = np.zeros(self.K)
+        X = np.transpose(np.dot(np.dot(invSqrtD, Ut), np.transpose(self.inputArray)))
+        means = np.zeros((self.K, self.p))
         for ii in range(self.N):
             indication = np.nonzero(self.outputArray[ii])[0] #there should always be exactly one 1
             means[indication] += X[indication]/(self.probabilities[indication]*self.N)
+        self.spheredMean = means
+    
+    def optimizedLDASolve(self, x):
+        if not(hasattr(self, 'spheredMean')):
+            self.sphereInput()
+        means= self.spheredMean
         distanceFromMean = np.zeros(self.K)
         for ii in range(self.K):
-            distanceFromMean[ii] = -1/2 * np.norm(x - self.means[ii])
-        findMin = distanceFromMean + np.log(self.probabilities)
-        indicator = np.argmax(findMin)
+            distanceFromMean[ii] = -1/2 * linalg.norm(x - means[ii])
+        findMax = distanceFromMean + np.log(self.probabilities)
+        indicator = np.argmax(findMax)
         return self.indicators[indicator]
 
 
-    def quadraticDiscriminantAnalysisSolve(self, x):
+    def QDASolve(self, x):
         if not (hasattr(self, 'probabilities')):
             self.setProbabilities()
         if not(hasattr(self, 'means')):
@@ -141,6 +152,70 @@ class LinClass:
            deltas[ii] = -1/2*math.log(linalg.norm(covariance[ii])) - 1/2*np.dot(x - self.means[ii], np.dot(linalg.inv(covariance[ii]), x - self.means[ii])) + math.log(self.probabilities[ii])
         indicator = np.argmax(deltas[ii])
         return self.indicators[indicator]
+
+#don't really know if this is how it works
+    def reducedRankLinearDiscriminantSolve(self, x):
+        if not(hasattr(self, 'means')):
+            self.setMeans()
+        M = self.means
+        if not(hasattr(self, 'linearCovariance')):
+            self.setLinearCovariance()
+        W = self.linearCovariance
+        U, d, Ut = linalg.svd(self.linearCovariance, hermitian=True)
+        invSqrtD = np.diag(np.sqrt(1/d))
+        invSqrtW = np.dot(U, np.dot(invSqrtD, Ut))
+        M = np.dot(M, invSqrtW)
+        B = np.cov(M)
+        V, D, Vt = linalg.svd(B, hermitian=True)
+        Vectors = np.zeros((self.K, self.p))
+        for ii in range(self.K):
+            Vectors[ii] = np.dot(invSqrtW, Vt[:,ii])
+        deltas = np.zeros(self.K)
+        for ii in range(self.K):
+            deltas[ii] = np.dot(Vectors[ii], x)
+        indicator = np.argmax(deltas[ii])
+        return self.indicators[indicator]
+
+
+#assumes for output that [1 0 0 0 ... 0 ] represents negative and everything else represents positive
+    def binaryLogisticRegg(self):
+        meanInput = np.mean(self.inputArray ,axis=0)
+        self.XMean = meanInput
+        stdInput = np.std(self.inputArray, axis=0)
+        self.XStd = stdInput
+        standardizedInput = (self.inputArray - meanInput) / stdInput
+        y = np.zeros(self.N)
+        for ii in range(len(self.outputArray)):
+            if self.outputArray[ii][0] == 1:
+                y[ii] = 0
+            else:
+                y[ii] = 1
+        self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
+        betaOrig = np.zeros(self.p + 1)
+        currentProbabilities = np.divide(np.exp(np.dot(self.standardizedInput, betaOrig)), (1 + np.exp(np.dot(self.standardizedInput, betaOrig))))
+        otherProbabilities = 1 - currentProbabilities
+        binomialResults = np.multiply(currentProbabilities, otherProbabilities)
+        W = np.diag(binomialResults)
+        derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
+        doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+        newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
+        print(newBeta)
+        while linalg.norm(newBeta - betaOrig) > 0.000000001:
+            betaOrig = newBeta
+            currentProbabilities = np.divide(np.exp(np.dot(self.standardizedInput, betaOrig)), (1 + np.exp(np.dot(self.standardizedInput, betaOrig))))
+            otherProbabilities = 1 - currentProbabilities
+            binomialResults = np.multiply(currentProbabilities, otherProbabilities)
+            W = np.diag(binomialResults)
+            derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
+            doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+            newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
+        self.logisticReggBestFit = newBeta
+
+    def standardizeTest(self, testX):
+        standardizedTestX = (testX - self.XMean)/self.XStd
+        return np.insert(standardizedTestX, 0, 1, axis=1)
+
+
     
 
 

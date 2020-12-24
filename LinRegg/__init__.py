@@ -27,6 +27,7 @@ class LinRegg:
             self.K = len(self.outputArray[0])
         else:
             self.K = 1
+
 #removes the bias term 1 first before standardizing
 
     def standardizePredictor(self):
