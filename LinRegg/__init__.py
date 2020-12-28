@@ -260,7 +260,7 @@ class LinRegg:
 
 
     #same as above but adds the condition that when non-zero coefficient hits zero, drop its variable from the active set of variable
-
+    #Introduce coordinate descent(?)
     def singleLARLassoAlgorithm(self, y, alpha=0.1):
         #helper function
         #assumes elem is not in the lst

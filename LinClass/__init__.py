@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from scipy import linalg
+from scipy.special import expit
 
 
 class LinClass:
@@ -192,17 +193,16 @@ class LinClass:
                 y[ii] = 1
         self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
         betaOrig = np.zeros(self.p + 1)
-        currentProbabilities = np.divide(np.exp(np.dot(self.standardizedInput, betaOrig)), (1 + np.exp(np.dot(self.standardizedInput, betaOrig))))
+        currentProbabilities = 1 - expit(self.standardizedInput, betaOrig)
         otherProbabilities = 1 - currentProbabilities
         binomialResults = np.multiply(currentProbabilities, otherProbabilities)
         W = np.diag(binomialResults)
         derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
         doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
         newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
-        print(newBeta)
-        while linalg.norm(newBeta - betaOrig) > 0.000000001:
+        while linalg.norm(newBeta - betaOrig) > 0.0000005:
             betaOrig = newBeta
-            currentProbabilities = np.divide(np.exp(np.dot(self.standardizedInput, betaOrig)), (1 + np.exp(np.dot(self.standardizedInput, betaOrig))))
+            currentProbabilities = 1 - expit(self.standardizedInput, betaOrig)
             otherProbabilities = 1 - currentProbabilities
             binomialResults = np.multiply(currentProbabilities, otherProbabilities)
             W = np.diag(binomialResults)
@@ -210,6 +210,50 @@ class LinClass:
             doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
             newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
         self.logisticReggBestFit = newBeta
+    
+    #introduce coordinate descent(?)
+    def binaryLogisticReggLasso(self, complexity):
+        meanInput = np.mean(self.inputArray ,axis=0)
+        self.XMean = meanInput
+        stdInput = np.std(self.inputArray, axis=0)
+        self.XStd = stdInput
+        standardizedInput = (self.inputArray - meanInput) / stdInput
+        y = np.zeros(self.N)
+        for ii in range(len(self.outputArray)):
+            if self.outputArray[ii][0] == 1:
+                y[ii] = 0
+            else:
+                y[ii] = 1
+        self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
+        betaOrig = np.zeros(self.p + 1)
+        currentProbabilities = 1 - expit(np.dot(self.standardizedInput, betaOrig))
+        otherProbabilities = 1 - currentProbabilities
+        binomialResults = np.multiply(currentProbabilities, otherProbabilities)
+        W = np.diag(binomialResults)
+        derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
+        doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+        newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
+        while linalg.norm(newBeta - betaOrig) > 0.0000005:
+            betaOrig = newBeta
+            currentProbabilities = 1 - expit(np.dot(self.standardizedInput, betaOrig))
+            otherProbabilities = 1 - currentProbabilities
+            binomialResults = np.multiply(currentProbabilities, otherProbabilities)
+            W = np.diag(binomialResults)
+            derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
+            doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+            newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
+        return newBeta
+
+    def logisticSolve(self, slope, x):
+        probabilities = np.zeros(2)
+        probabilities[0] = 1 - expit(np.dot(x, slope))
+        probabilities[1] = 1 - probabilities[0]
+        indicator = np.argmax(probabilities)
+        return self.indicators[indicator]
+
+
+    #separating hyperplane section has some 'skipped' math. Separating hyperplane will be on the svm section
+    
 
     def standardizeTest(self, testX):
         standardizedTestX = (testX - self.XMean)/self.XStd
