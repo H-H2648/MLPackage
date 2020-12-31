@@ -179,85 +179,133 @@ class LinClass:
 
 
 #assumes for output that [1 0 0 0 ... 0 ] represents negative and everything else represents positive
-    def binaryLogisticRegg(self):
-        meanInput = np.mean(self.inputArray ,axis=0)
-        self.XMean = meanInput
-        stdInput = np.std(self.inputArray, axis=0)
-        self.XStd = stdInput
-        standardizedInput = (self.inputArray - meanInput) / stdInput
+#y = 1 means 'True', y = 0 means 'False
+    def binaryLogisticRegg(self, outputIndex=0):
+        if not hasattr(self, 'XMean'):
+            meanInput = np.mean(self.inputArray ,axis=0)
+            self.XMean = meanInput
+        if not hasattr(self, 'stdInput'):
+            stdInput = np.std(self.inputArray, axis=0)
+            self.XStd = stdInput
+        if not hasattr(self, 'standardizedInput'):
+            standardizedInput = (self.inputArray - meanInput) / stdInput
+            self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
         y = np.zeros(self.N)
         for ii in range(len(self.outputArray)):
-            if self.outputArray[ii][0] == 1:
-                y[ii] = 0
-            else:
+            if self.outputArray[ii][outputIndex] == 1:
                 y[ii] = 1
-        self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
+            else:
+                y[ii] = 0
         betaOrig = np.zeros(self.p + 1)
-        currentProbabilities = 1 - expit(self.standardizedInput, betaOrig)
+        currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
         otherProbabilities = 1 - currentProbabilities
         binomialResults = np.multiply(currentProbabilities, otherProbabilities)
-        W = np.diag(binomialResults)
         derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
-        doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-        newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
-        while linalg.norm(newBeta - betaOrig) > 0.0000005:
+        XTW = np.copy(np.transpose(self.standardizedInput))
+        for ii in range(len(binomialResults)):
+            XTW[:,ii] = binomialResults[ii]*XTW[:,ii]
+        doubleDerivativeB = -np.dot(XTW, self.standardizedInput)
+        newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
+        step = 0
+        distance = linalg.norm(newBeta - betaOrig)
+        while distance > 0.0000005:
             betaOrig = newBeta
-            currentProbabilities = 1 - expit(self.standardizedInput, betaOrig)
+            currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
             otherProbabilities = 1 - currentProbabilities
             binomialResults = np.multiply(currentProbabilities, otherProbabilities)
             W = np.diag(binomialResults)
             derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
-            doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-            newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
-        self.logisticReggBestFit = newBeta
+            doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)*(1/2**step)
+            newDistance = linalg.norm(newBeta - betaOrig)
+            if newDistance/distance > 0.9999:
+                step +=1
+            distance = newDistance
+        return newBeta
     
     #introduce coordinate descent(?)
-    def binaryLogisticReggLasso(self, complexity):
-        meanInput = np.mean(self.inputArray ,axis=0)
-        self.XMean = meanInput
-        stdInput = np.std(self.inputArray, axis=0)
-        self.XStd = stdInput
-        standardizedInput = (self.inputArray - meanInput) / stdInput
+    def binaryLogisticReggLasso(self, complexity, outputIndex=0):
+        if not hasattr(self, 'XMean'):
+            meanInput = np.mean(self.inputArray ,axis=0)
+            self.XMean = meanInput
+        if not hasattr(self, 'stdInput'):
+            stdInput = np.std(self.inputArray, axis=0)
+            self.XStd = stdInput
+        if not hasattr(self, 'standardizedInput'):
+            standardizedInput = (self.inputArray - meanInput) / stdInput
+            self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
         y = np.zeros(self.N)
         for ii in range(len(self.outputArray)):
-            if self.outputArray[ii][0] == 1:
+            if self.outputArray[ii][outputIndex] == 1:
                 y[ii] = 0
             else:
                 y[ii] = 1
-        self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
         betaOrig = np.zeros(self.p + 1)
-        currentProbabilities = 1 - expit(np.dot(self.standardizedInput, betaOrig))
+        currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
         otherProbabilities = 1 - currentProbabilities
         binomialResults = np.multiply(currentProbabilities, otherProbabilities)
         W = np.diag(binomialResults)
         derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
-        doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-        newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
-        while linalg.norm(newBeta - betaOrig) > 0.0000005:
+        doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+        newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
+        step = 0
+        distance = linalg.norm(newBeta - betaOrig)
+        while distance > 0.0000005:
             betaOrig = newBeta
-            currentProbabilities = 1 - expit(np.dot(self.standardizedInput, betaOrig))
+            currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
             otherProbabilities = 1 - currentProbabilities
             binomialResults = np.multiply(currentProbabilities, otherProbabilities)
             W = np.diag(binomialResults)
             derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
-            doublederivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-            newBeta = betaOrig - np.dot(linalg.inv(doublederivativeB), derivativeB)
+            doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)*(1/2**step)
+            newDistance = linalg.norm(newBeta - betaOrig)
+            if newDistance/distance > 0.9999:
+                step +=1
+            distance = newDistance
         return newBeta
 
     def logisticSolve(self, slope, x):
         probabilities = np.zeros(2)
-        probabilities[0] = 1 - expit(np.dot(x, slope))
+        probabilities[0] = 1 - expit(-np.dot(x, slope))
         probabilities[1] = 1 - probabilities[0]
         indicator = np.argmax(probabilities)
         return self.indicators[indicator]
 
 
-    #separating hyperplane section has some 'skipped' math. Separating hyperplane will be on the svm section
     
 
     def standardizeTest(self, testX):
         standardizedTestX = (testX - self.XMean)/self.XStd
         return np.insert(standardizedTestX, 0, 1, axis=1)
+
+    #it doesn't really converge for some reason(?)
+    def separateHyperPlane(self, outputIndex = 0, learningRate=1):
+        if not hasattr(self, 'XMean'):
+            meanInput = np.mean(self.inputArray ,axis=0)
+            self.XMean = meanInput
+        if not hasattr(self, 'stdInput'):
+            stdInput = np.std(self.inputArray, axis=0)
+            self.XStd = stdInput
+        if not hasattr(self, 'standardizedInput'):
+            standardizedInput = (self.inputArray - meanInput) / stdInput
+            self.standardizedInput= np.insert(standardizedInput, 0, 1, axis=1)
+        currentBeta = np.random.normal(size=self.p + 1)
+        currentObs = np.dot(self.standardizedInput, currentBeta)
+        plusMinusY = np.zeros(self.N)
+        for ii in range(self.N):
+            if self.outputArray[ii][outputIndex] == 1:
+                plusMinusY[ii] = 1
+            else:
+                plusMinusY[ii] = -1
+        findWrong = np.not_equal(np.sign(plusMinusY), np.sign(currentObs)).nonzero()[0]
+        print(len(findWrong))
+        while len(findWrong) > 0:
+            for ii in findWrong:
+                currentBeta += np.insert(learningRate*(plusMinusY[ii]*self.standardizedInput[ii][1:]), 0, plusMinusY[ii])
+            currentObs = np.dot(self.standardizedInput, currentBeta)
+            findWrong = np.not_equal(np.sign(plusMinusY), np.sign(currentObs)).nonzero()[0]
+            print(len(findWrong))
 
 
     
