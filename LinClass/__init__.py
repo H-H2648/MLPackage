@@ -180,7 +180,8 @@ class LinClass:
 
 #assumes for output that [1 0 0 0 ... 0 ] represents negative and everything else represents positive
 #y = 1 means 'True', y = 0 means 'False
-    def binaryLogisticRegg(self, outputIndex=0):
+#damping parameter is not described in the book but it avoids the singularity problem (probabilities get too close to 1 or 0 such that the hessian is 'approximated' to be singular)
+    def binaryLogisticRegg(self, outputIndex=0, maxIteration=10000, damping=0):
         if not hasattr(self, 'XMean'):
             meanInput = np.mean(self.inputArray ,axis=0)
             self.XMean = meanInput
@@ -204,27 +205,27 @@ class LinClass:
         XTW = np.copy(np.transpose(self.standardizedInput))
         for ii in range(len(binomialResults)):
             XTW[:,ii] = binomialResults[ii]*XTW[:,ii]
-        doubleDerivativeB = -np.dot(XTW, self.standardizedInput)
+        doubleDerivativeB = -np.dot(XTW, self.standardizedInput) + damping*np.identity(self.p + 1)
         newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
-        step = 0
-        distance = linalg.norm(newBeta - betaOrig)
-        while distance > 0.0000005:
+        iteration = 0
+        while linalg.norm(derivativeB) > 0.000005 and iteration < maxIteration:
+            iteration +=1
             betaOrig = newBeta
             currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
             otherProbabilities = 1 - currentProbabilities
             binomialResults = np.multiply(currentProbabilities, otherProbabilities)
-            W = np.diag(binomialResults)
             derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities))
-            doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)*(1/2**step)
-            newDistance = linalg.norm(newBeta - betaOrig)
-            if newDistance/distance > 0.9999:
-                step +=1
-            distance = newDistance
+            XTW = np.copy(np.transpose(self.standardizedInput))
+            for ii in range(len(binomialResults)):
+                XTW[:,ii] = binomialResults[ii]*XTW[:,ii]
+            doubleDerivativeB = -np.dot(XTW, self.standardizedInput) + damping*np.identity(self.p + 1)
+            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
+        if iteration == maxIteration:
+            print('did not converge')
         return newBeta
     
     #introduce coordinate descent(?)
-    def binaryLogisticReggLasso(self, complexity, outputIndex=0):
+    def binaryLogisticReggLasso(self, complexity, outputIndex=0, maxIteration=10000, damping=0):
         if not hasattr(self, 'XMean'):
             meanInput = np.mean(self.inputArray ,axis=0)
             self.XMean = meanInput
@@ -237,32 +238,34 @@ class LinClass:
         y = np.zeros(self.N)
         for ii in range(len(self.outputArray)):
             if self.outputArray[ii][outputIndex] == 1:
-                y[ii] = 0
-            else:
                 y[ii] = 1
+            else:
+                y[ii] = 0
         betaOrig = np.zeros(self.p + 1)
         currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
         otherProbabilities = 1 - currentProbabilities
         binomialResults = np.multiply(currentProbabilities, otherProbabilities)
-        W = np.diag(binomialResults)
         derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
-        doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
+        XTW = np.copy(np.transpose(self.standardizedInput))
+        for ii in range(len(binomialResults)):
+            XTW[:,ii] = binomialResults[ii]*XTW[:,ii]
+        doubleDerivativeB = -np.dot(XTW, self.standardizedInput) + damping*np.identity(self.p + 1)
         newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
-        step = 0
-        distance = linalg.norm(newBeta - betaOrig)
-        while distance > 0.0000005:
+        iteration = 0
+        while linalg.norm(derivativeB) > 0.000005 and iteration < maxIteration:
+            iteration +=1
             betaOrig = newBeta
             currentProbabilities = 1 - expit(-np.dot(self.standardizedInput, betaOrig))
             otherProbabilities = 1 - currentProbabilities
             binomialResults = np.multiply(currentProbabilities, otherProbabilities)
-            W = np.diag(binomialResults)
             derivativeB = np.dot(np.transpose(self.standardizedInput), (y - currentProbabilities)) - np.sign(betaOrig)*complexity
-            doubleDerivativeB = -np.dot(np.dot(np.transpose(self.standardizedInput), W), self.standardizedInput)
-            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)*(1/2**step)
-            newDistance = linalg.norm(newBeta - betaOrig)
-            if newDistance/distance > 0.9999:
-                step +=1
-            distance = newDistance
+            XTW = np.copy(np.transpose(self.standardizedInput))
+            for ii in range(len(binomialResults)):
+                XTW[:,ii] = binomialResults[ii]*XTW[:,ii]
+            doubleDerivativeB = -np.dot(XTW, self.standardizedInput) + damping*np.identity(self.p + 1)
+            newBeta = betaOrig - np.dot(linalg.inv(doubleDerivativeB), derivativeB)
+        if iteration == maxIteration:
+            print('did not converge')
         return newBeta
 
     def logisticSolve(self, slope, x):
