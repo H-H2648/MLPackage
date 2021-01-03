@@ -1,6 +1,15 @@
 import numpy as np
 
 
+#coefficient listed as [a0, a1, a2, ...]
+def integralPolynomial(begin, end, polynomialCoefficients):
+    integral = 0
+    for ii in range(len(polynomialCoefficients)):
+        coefficient = polynomialCoefficients[ii]
+        integral += coefficient/(ii+1)(end**(ii+1) - begin**(ii+1))
+    return integral
+
+
 class BasisExpansion:
     #inputArray is of the form: 
     # assumes input is of the form [[x11, x12, x13, ..., x1p], [x21, x22, ..., x2p], [xN1, xN2, ..., xNp]] (numpy array)
@@ -31,6 +40,15 @@ class BasisExpansion:
 
     def naturalCubeSplines(self, x, knots, ii):
         return self.cubeKnot(x, knots, ii) - self.cubeKnot(x, knots, -2)
+
+    #One dimensional
+    def smoothCubeSplinesBestFit(self, knots, complexity, basis, output):
+        NTN = np.dot(np.transpose(basis), basis)
+        Omega = np.zeros((len(knots)-1, len(knots)-1))
+        for ii in range(1, len(knots)-1):
+            for jj in range(1, len(knots)-1):
+
+
 
 
 
